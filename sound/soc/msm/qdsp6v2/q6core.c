@@ -521,6 +521,7 @@ int core_get_adsp_ver(void)
 		goto fail_cmd;
 	}
 
+	q6core_lcl.cmd_resp_received_flag &= ~(FLAG_AVCS_GET_VERSIONS_RESULT);
 	mutex_unlock(&(q6core_lcl.cmd_lock));
 	ret = wait_event_timeout(q6core_lcl.cmd_req_wait,
 			(q6core_lcl.cmd_resp_received_flag ==
