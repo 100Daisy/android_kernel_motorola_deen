@@ -2677,10 +2677,16 @@ __limProcessSmeDisassocReq(tpAniSirGlobal pMac, tANI_U32 *pMsgBuf)
 		 * and lim state is eLIM_SME_WT_REASSOC_STATE. As the
 		 * FT session would have already created but is not cleaned.
 		 * This will prevent sending duplicate add bss request,
-		 * if we try to disconnect and connect to the same AP
+		 * if we try to disconnect and connect to the same AP.
+		 * As limFTCleanup delete pesession, send resp back to csr
+		 * from here.
 		 */
 		case eLIM_SME_WT_REASSOC_STATE:
+			limLog(pMac, LOG1, FL("Rcvd SME_DISASSOC_REQ while in "
+			      "limSmeState: %d "),psessionEntry->limSmeState);
 			limFTCleanup(pMac);
+			disassocTrigger = eLIM_HOST_DISASSOC;
+			goto sendDisassoc;
 			/* Fall through */
                 case eLIM_SME_ASSOCIATED_STATE:
                 case eLIM_SME_LINK_EST_STATE:
@@ -3893,7 +3899,7 @@ __limHandleSmeStopBssRequest(tpAniSirGlobal pMac, tANI_U32 *pMsgBuf)
        )
     {
         tSirMacAddr   bcAddr = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
-        if (stopBssReq.reasonCode == eSIR_SME_MIC_COUNTER_MEASURES)
+        if ((stopBssReq.reasonCode == eSIR_SME_MIC_COUNTER_MEASURES))
             // Send disassoc all stations associated thru TKIP
             __limCounterMeasures(pMac,psessionEntry);
         else
@@ -5836,7 +5842,7 @@ static void lim_process_sme_channel_change_request(tpAniSirGlobal mac_ctx,
    max_tx_pwr = cfgGetRegulatoryMaxTransmitPower(mac_ctx,
                      ch_change_req->new_chan);
 
-   if (max_tx_pwr == WDA_MAX_TXPOWER_INVALID) {
+   if ((max_tx_pwr == WDA_MAX_TXPOWER_INVALID)) {
        limLog(mac_ctx, LOGE, FL("Invalid Request/max_tx_pwr"));
        return;
    }

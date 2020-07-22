@@ -6131,6 +6131,13 @@ __wlan_hdd_cfg80211_get_supported_features(struct wiphy *wiphy,
     fset |= WIFI_FEATURE_AP_STA;
 #endif
 
+#ifdef FEATURE_WLAN_LFR
+    if (sme_IsFeatureSupportedByFW(BSSID_BLACKLIST)) {
+        fset |= WIFI_FEATURE_CONTROL_ROAMING;
+        hddLog(LOG1, FL("CONTROL_ROAMING supported by driver"));
+    }
+#endif
+
 #ifdef WLAN_FEATURE_LINK_LAYER_STATS
    if ((TRUE == pHddCtx->cfg_ini->fEnableLLStats) &&
        (TRUE == sme_IsFeatureSupportedByFW(LINK_LAYER_STATS_MEAS))) {
@@ -6630,288 +6637,6 @@ static int wlan_hdd_cfg80211_firmware_roaming(struct wiphy *wiphy,
     return ret;
 }
 
-//IKLOCSEN-3054, MOTO Gambugge, 10/16/2017 – implement do_acs() in WLAN driver
-/**
- * enum qca_wlan_vendor_attr_acs_offload
- *
- * @QCA_WLAN_VENDOR_ATTR_ACS_PRIMARY_CHANNEL: ACS selected primary channel
- * @QCA_WLAN_VENDOR_ATTR_ACS_SECONDARY_CHANNEL: ACS selected secondary channel
- * @QCA_WLAN_VENDOR_ATTR_ACS_HW_MODE: hw_mode for ACS
- * @QCA_WLAN_VENDOR_ATTR_ACS_HT_ENABLED: indicate if HT capability is enabled
- * @QCA_WLAN_VENDOR_ATTR_ACS_HT40_ENABLED: indicate HT capability
- */
-enum qca_wlan_vendor_attr_acs_offload {
-    QCA_WLAN_VENDOR_ATTR_ACS_CHANNEL_INVALID = 0,
-    QCA_WLAN_VENDOR_ATTR_ACS_PRIMARY_CHANNEL,
-    QCA_WLAN_VENDOR_ATTR_ACS_SECONDARY_CHANNEL,
-    QCA_WLAN_VENDOR_ATTR_ACS_HW_MODE,
-    QCA_WLAN_VENDOR_ATTR_ACS_HT_ENABLED,
-    QCA_WLAN_VENDOR_ATTR_ACS_HT40_ENABLED,
-    QCA_WLAN_VENDOR_ATTR_ACS_VHT_ENABLED,
-    QCA_WLAN_VENDOR_ATTR_ACS_CHWIDTH,
-    QCA_WLAN_VENDOR_ATTR_ACS_CH_LIST,
-    QCA_WLAN_VENDOR_ATTR_ACS_VHT_SEG0_CENTER_CHANNEL,
-    QCA_WLAN_VENDOR_ATTR_ACS_VHT_SEG1_CENTER_CHANNEL,
-    QCA_WLAN_VENDOR_ATTR_ACS_FREQ_LIST,
-    /* keep last */
-    QCA_WLAN_VENDOR_ATTR_ACS_AFTER_LAST,
-    QCA_WLAN_VENDOR_ATTR_ACS_MAX =
-    QCA_WLAN_VENDOR_ATTR_ACS_AFTER_LAST - 1
-};
-
-/**
- * enum qca_wlan_vendor_acs_hw_mode
- *
- * @QCA_ACS_MODE_IEEE80211B: 11b mode
- * @QCA_ACS_MODE_IEEE80211G: 11g mode
- * @QCA_ACS_MODE_IEEE80211A: 11a mode
- * @QCA_ACS_MODE_IEEE80211AD: 11ad mode
- */
- enum qca_wlan_vendor_acs_hw_mode {
-    QCA_ACS_MODE_IEEE80211B,
-    QCA_ACS_MODE_IEEE80211G,
-    QCA_ACS_MODE_IEEE80211A,
-    QCA_ACS_MODE_IEEE80211AD,
-    QCA_ACS_MODE_IEEE80211ANY,
-};
-
-static const struct nla_policy
-wlan_hdd_cfg80211_do_acs_policy[QCA_WLAN_VENDOR_ATTR_ACS_MAX+1] = {
-    [QCA_WLAN_VENDOR_ATTR_ACS_HW_MODE] = { .type = NLA_U8 },
-    [QCA_WLAN_VENDOR_ATTR_ACS_HT_ENABLED] = { .type = NLA_FLAG },
-    [QCA_WLAN_VENDOR_ATTR_ACS_HT40_ENABLED] = { .type = NLA_FLAG },
-    [QCA_WLAN_VENDOR_ATTR_ACS_VHT_ENABLED] = { .type = NLA_FLAG },
-    [QCA_WLAN_VENDOR_ATTR_ACS_CHWIDTH] = { .type = NLA_U16 },
-    [QCA_WLAN_VENDOR_ATTR_ACS_CH_LIST] = { .type = NLA_UNSPEC },
-    [QCA_WLAN_VENDOR_ATTR_ACS_FREQ_LIST] = { .type = NLA_UNSPEC },
-};
-
-/**
- * wlan_hdd_cfg80211_acs_ch_select_evt: Callback function for ACS evt
- * @adapter: Pointer to SAP adapter struct
- * @pri_channel: SAP ACS procedure selected Primary channel
- * @sec_channel: SAP ACS procedure selected secondary channel
- *
- * This is a callback function from SAP module on ACS procedure is completed.
- * This function send the ACS selected channel information to hostapd
- *
- * Return: None
- */
-
-void wlan_hdd_cfg80211_acs_ch_select_evt(hdd_adapter_t *adapter, tChannelListInfo channel_list)
-{
-    hdd_context_t *hdd_ctx = WLAN_HDD_GET_CTX(adapter);
-    struct sk_buff *vendor_event;
-    int ret_val;
-    uint16_t ch_width;
-
-    vendor_event = cfg80211_vendor_event_alloc(hdd_ctx->wiphy,
-        &(adapter->wdev),
-        4 * sizeof(u8) + 1 * sizeof(u16) + 4 + NLMSG_HDRLEN,
-        QCA_NL80211_VENDOR_SUBCMD_DO_ACS_INDEX,
-        GFP_KERNEL);
-    if (!vendor_event) {
-        hddLog(VOS_TRACE_LEVEL_ERROR, "cfg80211_vendor_event_alloc failed");
-        return;
-    }
-
-    ret_val = nla_put_u8(vendor_event,
-        QCA_WLAN_VENDOR_ATTR_ACS_PRIMARY_CHANNEL,
-        channel_list.channels[0]);
-    if (ret_val) {
-        hddLog(VOS_TRACE_LEVEL_ERROR, "QCA_WLAN_VENDOR_ATTR_ACS_PRIMARY_CHANNEL put fail");
-        kfree_skb(vendor_event);
-        return;
-    }
-
-    ret_val = nla_put_u8(vendor_event,
-        QCA_WLAN_VENDOR_ATTR_ACS_SECONDARY_CHANNEL,
-        0); // IKSWO-21203, Moto, gambugge, Fix channel set failure in nl80211 driver
-    if (ret_val) {
-        hddLog(VOS_TRACE_LEVEL_ERROR, "QCA_WLAN_VENDOR_ATTR_ACS_SECONDARY_CHANNEL put fail");
-        kfree_skb(vendor_event);
-        return;
-    }
-
-    ch_width = 20;
-
-    ret_val = nla_put_u16(vendor_event,
-        QCA_WLAN_VENDOR_ATTR_ACS_CHWIDTH,
-        ch_width);
-    if (ret_val) {
-        hddLog(VOS_TRACE_LEVEL_ERROR, "QCA_WLAN_VENDOR_ATTR_ACS_CHWIDTH put fail");
-        kfree_skb(vendor_event);
-        return;
-    }
-
-    if (channel_list.channels[channel_list.num_channels - 1] > 14)
-        ret_val = nla_put_u8(vendor_event,
-            QCA_WLAN_VENDOR_ATTR_ACS_HW_MODE,
-            QCA_ACS_MODE_IEEE80211A);
-    else
-        ret_val = nla_put_u8(vendor_event,
-        QCA_WLAN_VENDOR_ATTR_ACS_HW_MODE,
-        QCA_ACS_MODE_IEEE80211G);
-
-    if (ret_val) {
-        hddLog(VOS_TRACE_LEVEL_ERROR, "QCA_WLAN_VENDOR_ATTR_ACS_HW_MODE put fail");
-        kfree_skb(vendor_event);
-        return;
-    }
-
-    hddLog(VOS_TRACE_LEVEL_INFO, "ACS result for wlan0: PRI_CH: %d SEC_CH: %d",
-        channel_list.channels[0],
-        channel_list.channels[channel_list.num_channels - 1]);
-
-    cfg80211_vendor_event(vendor_event, GFP_KERNEL);
-
-    return;
-}
-
-/**
- * __wlan_hdd_cfg80211_do_acs(): CFG80211 handler function for DO_ACS Vendor CMD
- * @wiphy:  Linux wiphy struct pointer
- * @wdev:   Linux wireless device struct pointer
- * @data:   ACS information from hostapd
- * @data_len: ACS information length
- *
- * This function handle DO_ACS Vendor command from hostapd, parses ACS config
- * and starts ACS procedure.
- *
- * Return: ACS procedure start status
- */
-static int __wlan_hdd_cfg80211_do_acs(struct wiphy *wiphy,
-  struct wireless_dev *wdev,
-  const void *data, int data_len)
-{
-    VOS_STATUS status;
-    struct net_device *dev = wdev->netdev;
-    hdd_adapter_t *pAdapter = WLAN_HDD_GET_PRIV_PTR(dev);
-    tHalHandle hHal = WLAN_HDD_GET_HAL_CTX(pAdapter);
-    tChannelListInfo channel_list;
-    int currentBand = 0;
-    struct nlattr *tb[QCA_WLAN_VENDOR_ATTR_ACS_MAX + 1];
-    uint8_t hw_mode;
-    int i;
-
-    if (NULL == wdev) {
-        hddLog(VOS_TRACE_LEVEL_ERROR, "%s: wdev is Null", __func__);
-        return -ENODEV;
-    }
-
-    if (NULL == wdev->netdev) {
-        hddLog(VOS_TRACE_LEVEL_ERROR, "%s: dev is Null", __func__);
-        return -ENODEV;
-    }
-
-    status = nla_parse(tb, QCA_WLAN_VENDOR_ATTR_ACS_MAX, data, data_len,
-                       wlan_hdd_cfg80211_do_acs_policy);
-    if (status) {
-        hddLog(VOS_TRACE_LEVEL_ERROR, "DO_ACS NL CMD parsing failed");
-        return -EINVAL;
-    }
-
-    if (!tb[QCA_WLAN_VENDOR_ATTR_ACS_HW_MODE]) {
-        hddLog(VOS_TRACE_LEVEL_ERROR, "Attr hw_mode failed");
-        return -EINVAL;
-    }
-    hw_mode = nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_ACS_HW_MODE]);
-
-    /* hw_mode = a/b/g: QCA_WLAN_VENDOR_ATTR_ACS_CH_LIST and
-    * QCA_WLAN_VENDOR_ATTR_ACS_FREQ_LIST attrs are present, and
-    * QCA_WLAN_VENDOR_ATTR_ACS_CH_LIST is used for obtaining the
-    * channel list, QCA_WLAN_VENDOR_ATTR_ACS_FREQ_LIST is ignored
-    * since it contains the frequency values of the channels in
-    * the channel list.
-    * hw_mode = any: only QCA_WLAN_VENDOR_ATTR_ACS_FREQ_LIST attr
-    * is present
-    */
-    if (tb[QCA_WLAN_VENDOR_ATTR_ACS_CH_LIST]) {
-        char *tmp = nla_data(tb[QCA_WLAN_VENDOR_ATTR_ACS_CH_LIST]);
-        channel_list.num_channels = nla_len(
-            tb[QCA_WLAN_VENDOR_ATTR_ACS_CH_LIST]);
-        if (channel_list.num_channels) {
-            memcpy(channel_list.channels, tmp,
-                channel_list.num_channels);
-        }
-    } else if (tb[QCA_WLAN_VENDOR_ATTR_ACS_FREQ_LIST]) {
-        uint32_t *freq =
-        nla_data(tb[QCA_WLAN_VENDOR_ATTR_ACS_FREQ_LIST]);
-        channel_list.num_channels = nla_len(
-        tb[QCA_WLAN_VENDOR_ATTR_ACS_FREQ_LIST]) /
-        sizeof(uint32_t);
-        if (channel_list.num_channels) {
-        /* convert frequency to channel */
-        for (i = 0; i < channel_list.num_channels; i++)
-            channel_list.channels[i] =
-                ieee80211_frequency_to_channel(freq[i]);
-        }
-    }
-
-    if (channel_list.num_channels >=1) {
-        if (hw_mode == QCA_ACS_MODE_IEEE80211A) {
-            currentBand =
-                (channel_list.channels[channel_list.num_channels - 1] >= 149) ? 3 :
-                (channel_list.channels[channel_list.num_channels - 1] >= 100) ? 2 :
-                (channel_list.channels[channel_list.num_channels - 1] >=  36) ? 1 : 0;
-        } else { // Auto 2.4 Ghz
-            currentBand = 0;
-        }
-    }
-
-    hddLog(VOS_TRACE_LEVEL_INFO,
-            "ACS Config for wlan0: HW_MODE: %d NUM CHANNELS: %d START_CH: %d"
-            "END_CH: %d currentBand: %d",
-            hw_mode,
-            channel_list.num_channels,
-            channel_list.channels[0],
-            channel_list.channels[channel_list.num_channels - 1],
-            currentBand);
-
-    status = WLANSAP_SetChannelRange(hHal,
-            channel_list.channels[0],
-            channel_list.channels[channel_list.num_channels - 1],
-            currentBand);
-
-    if (!VOS_IS_STATUS_SUCCESS(status)) {
-        hddLog(VOS_TRACE_LEVEL_ERROR, "%s SetChannelRange Failed!!!",__func__);
-        return -EINVAL;
-    }
-
-    (WLAN_HDD_GET_CTX(pAdapter))->is_dynamic_channel_range_set = 1;
-    (WLAN_HDD_GET_CTX(pAdapter))->cfg_ini->apAutoChannelSelection = 1;
-
-    wlan_hdd_cfg80211_acs_ch_select_evt(pAdapter, channel_list);
-
-    return status;
-}
-
-/**
-* wlan_hdd_cfg80211_do_acs : CFG80211 handler function for DO_ACS Vendor CMD
-* @wiphy:  Linux wiphy struct pointer
-* @wdev:   Linux wireless device struct pointer
-* @data:   ACS information from hostapd
-* @data_len: ACS information len
-*
-* This function handle DO_ACS Vendor command from hostapd, parses ACS config
-* and starts ACS procedure.
-*
-* Return: ACS procedure start status
-*/
-static int wlan_hdd_cfg80211_do_acs(struct wiphy *wiphy,
-  struct wireless_dev *wdev,
-  const void *data, int data_len)
-{
-    int ret;
-
-    vos_ssr_protect(__func__);
-    ret = __wlan_hdd_cfg80211_do_acs(wiphy, wdev, data, data_len);
-    vos_ssr_unprotect(__func__);
-
-    return ret;
-}
-//END IKLOCSEN-3054
-
 static const struct
 nla_policy
 qca_wlan_vendor_get_wifi_info_policy[
@@ -7025,6 +6750,222 @@ wlan_hdd_cfg80211_get_wifi_info(struct wiphy *wiphy,
     return ret;
 }
 
+#define PARAM_SET_BSSID \
+    QCA_WLAN_VENDOR_ATTR_ROAMING_PARAM_SET_BSSID_PARAMS_BSSID
+#define PARAMS_NUM_BSSID \
+    QCA_WLAN_VENDOR_ATTR_ROAMING_PARAM_SET_BSSID_PARAMS_NUM_BSSID
+#define MAX_ROAMING_PARAM \
+    QCA_WLAN_VENDOR_ATTR_ROAMING_PARAM_MAX
+#define PARAM_BSSID_PARAMS \
+    QCA_WLAN_VENDOR_ATTR_ROAMING_PARAM_SET_BSSID_PARAMS
+
+static const struct
+nla_policy
+wlan_hdd_set_roam_param_policy[MAX_ROAMING_PARAM + 1] = {
+    [QCA_WLAN_VENDOR_ATTR_ROAMING_SUBCMD] = {.type = NLA_U32 },
+    [QCA_WLAN_VENDOR_ATTR_ROAMING_REQ_ID] = {.type = NLA_U32 },
+    [PARAMS_NUM_BSSID] = { .type = NLA_U32 },
+    [PARAM_SET_BSSID]       = {
+        .type = NLA_UNSPEC,
+        .len = HDD_MAC_ADDR_LEN},
+};
+
+/**
+ * hdd_set_blacklist_bssid() - parse set blacklist bssid
+ * @hHal:       HAL Handle
+ * @blacklist_timeout:   Per Bssid Blacklist timer
+ * @tb:            list of attributes
+ * @session_id:    session id
+ *
+ * Return: 0 on success; error number on failure
+ */
+static int hdd_set_blacklist_bssid(tHalHandle hHal,
+                                   uint8_t blacklist_timeout,
+                                   struct nlattr **tb,
+                                   uint8_t session_id)
+{
+    int rem, i;
+    uint32_t count;
+    struct nlattr *tb2[MAX_ROAMING_PARAM + 1];
+    struct nlattr *curr_attr = NULL;
+    struct roam_ext_params *roam_params = NULL;
+
+    roam_params = vos_mem_malloc(sizeof(struct roam_ext_params));
+    if (NULL == roam_params) {
+        hddLog(LOGE, FL("vos_mem_alloc failed "));
+        return eHAL_STATUS_FAILED_ALLOC;
+    }
+
+    /* Parse and fetch number of blacklist BSSID */
+    if (!tb[PARAMS_NUM_BSSID]) {
+        hddLog(LOGE, FL("attr num of blacklist bssid failed"));
+        goto fail;
+    }
+    count = nla_get_u32(tb[PARAMS_NUM_BSSID]);
+    if (count > MAX_BSSID_AVOID_LIST) {
+        hddLog(LOGE, FL("Blacklist BSSID count %u exceeds max %u"),
+               count, MAX_BSSID_AVOID_LIST);
+        goto fail;
+    }
+
+    roam_params->blacklist_timedout =  blacklist_timeout;
+    hddLog(LOG1, FL("Num of blacklist BSSID (%d)"), count);
+
+    i = 0;
+    if (count && tb[PARAM_BSSID_PARAMS]) {
+        nla_for_each_nested(curr_attr,
+                tb[PARAM_BSSID_PARAMS], rem) {
+                if (i == count) {
+                    hddLog(LOGE, FL("Ignoring excess Blacklist BSSID"));
+                    break;
+                }
+
+                if (nla_parse(tb2,
+                    QCA_WLAN_VENDOR_ATTR_ROAMING_PARAM_MAX,
+                    nla_data(curr_attr),
+                    nla_len(curr_attr),
+                    wlan_hdd_set_roam_param_policy)) {
+                        hddLog(LOGE, FL("nla_parse failed"));
+                        goto fail;
+                }
+                /* Parse and fetch MAC address */
+                if (!tb2[PARAM_SET_BSSID]) {
+                        hddLog(LOGE, FL("attr blacklist addr failed"));
+                        goto fail;
+                }
+                nla_memcpy(roam_params->bssid_avoid_list[i].bytes,
+                           tb2[PARAM_SET_BSSID], VOS_MAC_ADDR_SIZE);
+                hddLog(VOS_TRACE_LEVEL_INFO, FL(MAC_ADDRESS_STR),
+                       MAC_ADDR_ARRAY(roam_params->bssid_avoid_list[i].bytes));
+                i++;
+        }
+    }
+
+    if (i < count)
+        hddLog(LOG1, FL("Num Blacklist BSSID %u less than expected %u"),
+               i, count);
+
+    roam_params->num_bssid_avoid_list = i;
+    hddLog(LOG1, FL("session  id %d timer %d"), session_id, blacklist_timeout);
+    if (sme_UpdateBlacklist(hHal, session_id, roam_params) !=
+       eHAL_STATUS_SUCCESS) {
+       goto fail;
+    }
+
+    return 0;
+fail:
+    if (roam_params)
+        vos_mem_free(roam_params);
+
+    return -EINVAL;
+}
+
+/**
+ * __wlan_hdd_cfg80211_set_ext_roam_params() - Settings for roaming parameters
+ * @wiphy:                 The wiphy structure
+ * @wdev:                  The wireless device
+ * @data:                  Data passed by framework
+ * @data_len:              Parameters to be configured passed as data
+ *
+ * The roaming related parameters are configured by the framework
+ * using this interface.
+ *
+ * Return: Return either success or failure code.
+ */
+static int
+__wlan_hdd_cfg80211_set_ext_roam_params(struct wiphy *wiphy,
+                                        struct wireless_dev *wdev,
+                                        const void *data, int data_len)
+{
+    struct net_device *dev = wdev->netdev;
+    hdd_adapter_t *pAdapter = WLAN_HDD_GET_PRIV_PTR(dev);
+    hdd_context_t *hdd_ctx = wiphy_priv(wiphy);
+    tHalHandle hHal = WLAN_HDD_GET_HAL_CTX(pAdapter);
+    uint32_t cmd_type, req_id;
+    struct nlattr *tb_vendor[MAX_ROAMING_PARAM + 1];
+    int ret = 0;
+    uint8_t blacklist_timeout = 0;
+
+    ENTER();
+
+    if (VOS_FTM_MODE == hdd_get_conparam()) {
+        hddLog(LOGE, FL("Command not allowed in FTM mode"));
+        return -EINVAL;
+    }
+
+    ret = wlan_hdd_validate_context(hdd_ctx);
+    if (0 != ret) {
+        hddLog(LOGE, FL("HDD context is not valid"));
+        return -EINVAL;
+    }
+    if (nla_parse(tb_vendor, QCA_WLAN_VENDOR_ATTR_ROAMING_PARAM_MAX, data,
+        data_len, wlan_hdd_set_roam_param_policy)) {
+        hddLog(LOGE, FL("ROAM PARAMS NL CMD parsing failed"));
+        return -EINVAL;
+    }
+
+    /* Parse and fetch Command Type */
+    if (!tb_vendor[QCA_WLAN_VENDOR_ATTR_ROAMING_SUBCMD]) {
+        hddLog(LOGE, FL("roam cmd type failed"));
+        return -EINVAL;
+    }
+
+    blacklist_timeout = hdd_ctx->cfg_ini->bssid_blacklist_timeout;
+
+    cmd_type = nla_get_u32(tb_vendor[QCA_WLAN_VENDOR_ATTR_ROAMING_SUBCMD]);
+    if (!tb_vendor[QCA_WLAN_VENDOR_ATTR_ROAMING_REQ_ID]) {
+        hddLog(LOGE, FL("attr request id failed"));
+        return -EINVAL;
+    }
+    req_id = nla_get_u32(
+         tb_vendor[QCA_WLAN_VENDOR_ATTR_ROAMING_REQ_ID]);
+    hddLog(LOG1, FL("Req Id: %u Cmd Type: %u"), req_id, cmd_type);
+    switch (cmd_type) {
+    case QCA_WLAN_VENDOR_ROAMING_SUBCMD_SET_BLACKLIST_BSSID:
+
+         if (blacklist_timeout) {
+             ret = hdd_set_blacklist_bssid(hHal, blacklist_timeout,
+                       tb_vendor, pAdapter->sessionId);
+             if (ret)
+                 return ret;
+         } else {
+             hddLog(LOGE, FL("Timeout is Zero, Bssid Blacklist Not Supported "));
+             ret = -EINVAL;
+         }
+         break;
+    default:
+         break;
+    }
+
+    EXIT();
+
+    return ret;
+}
+
+/**
+ * wlan_hdd_cfg80211_set_ext_roam_params() - set ext scan roam params
+ * @wiphy:   pointer to wireless wiphy structure.
+ * @wdev:    pointer to wireless_dev structure.
+ * @data:    Pointer to the data to be passed via vendor interface
+ * @data_len:Length of the data to be passed
+ *
+ * Return:   Return the Success or Failure code.
+ */
+static int
+wlan_hdd_cfg80211_set_ext_roam_params(struct wiphy *wiphy,
+                              struct wireless_dev *wdev,
+                              const void *data,
+                              int data_len)
+{
+    int ret = 0;
+
+    vos_ssr_protect(__func__);
+    ret = __wlan_hdd_cfg80211_set_ext_roam_params(wiphy,
+          wdev, data, data_len);
+    vos_ssr_unprotect(__func__);
+
+    return ret;
+}
 
 /*
  * define short names for the global vendor params
@@ -7508,7 +7449,13 @@ wlan_hdd_add_tx_ptrn(hdd_adapter_t *adapter, hdd_context_t *hdd_ctx,
     uint8_t pattern_id = 0;
     v_MACADDR_t dst_addr;
     uint16_t eth_type = htons(ETH_P_IP);
+    hdd_station_ctx_t *hdd_sta_ctx = WLAN_HDD_GET_STATION_CTX_PTR(adapter);
 
+    if (!hdd_sta_ctx)
+    {
+        hddLog(LOGE, FL("Invalid station context"));
+        return -EINVAL;
+    }
     if (!hdd_connIsConnected(WLAN_HDD_GET_STATION_CTX_PTR(adapter)))
     {
         hddLog(LOGE, FL("Not in Connected state!"));
@@ -7567,6 +7514,9 @@ wlan_hdd_add_tx_ptrn(hdd_adapter_t *adapter, hdd_context_t *hdd_ctx,
             FL("input src mac address and connected ap bssid are different"));
         goto fail;
     }
+
+    vos_mem_copy(add_req->bss_address, hdd_sta_ctx->conn_info.bssId,
+                 VOS_MAC_ADDR_SIZE);
 
     if (!tb[PARAM_DST_MAC_ADDR])
     {
@@ -8943,7 +8893,8 @@ const struct wiphy_vendor_command hdd_wiphy_vendor_commands[] =
         .info.vendor_id = QCA_NL80211_VENDOR_ID,
         .info.subcmd = QCA_NL80211_VENDOR_SUBCMD_TDLS_GET_STATUS,
         .flags = WIPHY_VENDOR_CMD_NEED_WDEV |
-                 WIPHY_VENDOR_CMD_NEED_NETDEV,
+                 WIPHY_VENDOR_CMD_NEED_NETDEV |
+		 WIPHY_VENDOR_CMD_NEED_RUNNING,
         .doit = wlan_hdd_cfg80211_exttdls_get_status
     },
     {
@@ -8957,7 +8908,8 @@ const struct wiphy_vendor_command hdd_wiphy_vendor_commands[] =
         .info.vendor_id = QCA_NL80211_VENDOR_ID,
         .info.subcmd = QCA_NL80211_VENDOR_SUBCMD_NO_DFS_FLAG,
         .flags = WIPHY_VENDOR_CMD_NEED_WDEV |
-                 WIPHY_VENDOR_CMD_NEED_NETDEV,
+                 WIPHY_VENDOR_CMD_NEED_NETDEV |
+		 WIPHY_VENDOR_CMD_NEED_RUNNING,
         .doit = wlan_hdd_cfg80211_disable_dfs_channels
     },
     {
@@ -8996,6 +8948,14 @@ const struct wiphy_vendor_command hdd_wiphy_vendor_commands[] =
                  WIPHY_VENDOR_CMD_NEED_NETDEV|
                   WIPHY_VENDOR_CMD_NEED_RUNNING,
         .doit = wlan_hdd_cfg80211_get_wifi_info
+    },
+    {
+        .info.vendor_id = QCA_NL80211_VENDOR_ID,
+        .info.subcmd = QCA_NL80211_VENDOR_SUBCMD_ROAM,
+        .flags = WIPHY_VENDOR_CMD_NEED_WDEV |
+                 WIPHY_VENDOR_CMD_NEED_NETDEV|
+                  WIPHY_VENDOR_CMD_NEED_RUNNING,
+        .doit = wlan_hdd_cfg80211_set_ext_roam_params
     },
     {
         .info.vendor_id = QCA_NL80211_VENDOR_ID,
@@ -9079,16 +9039,6 @@ const struct wiphy_vendor_command hdd_wiphy_vendor_commands[] =
                  WIPHY_VENDOR_CMD_NEED_NETDEV,
         .doit = wlan_hdd_cfg80211_get_logger_supp_feature
    },
-    //IKLOCSEN-3054, MOTO Gambugge, 10/16/2017 – implement do_acs() in WLAN driver
-    {
-        .info.vendor_id = QCA_NL80211_VENDOR_ID,
-        .info.subcmd = QCA_NL80211_VENDOR_SUBCMD_DO_ACS,
-        .flags = WIPHY_VENDOR_CMD_NEED_WDEV |
-            WIPHY_VENDOR_CMD_NEED_NETDEV |
-            WIPHY_VENDOR_CMD_NEED_RUNNING,
-        .doit = wlan_hdd_cfg80211_do_acs
-    },
-    //END IKLOCSEN-3054
 };
 
 /* vendor specific events */
@@ -9209,12 +9159,6 @@ struct nl80211_vendor_cmd_info wlan_hdd_cfg80211_vendor_events[] =
          .vendor_id = QCA_NL80211_VENDOR_ID,
          .subcmd = QCA_NL80211_VENDOR_SUBCMD_LINK_PROPERTIES,
     },
-    //IKLOCSEN-3054, MOTO Gambugge, 10/16/2017 – implement do_acs() in WLAN driver
-    [QCA_NL80211_VENDOR_SUBCMD_DO_ACS_INDEX] = {
-        .vendor_id = QCA_NL80211_VENDOR_ID,
-        .subcmd = QCA_NL80211_VENDOR_SUBCMD_DO_ACS
-    },
-    //END IKLOCSEN-3054
 };
 
 /*
@@ -20138,6 +20082,12 @@ static void hdd_config_sched_scan_plan(tpSirPNOScanReq pno_req,
             request->scan_plans[i].iterations;
         pno_req->scanTimers.aTimerValues[i].uTimerValue =
             request->scan_plans[i].interval;
+        VOS_TRACE(VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_INFO,
+                  "scan plan - %d, iterations = %d",
+                  i, request->scan_plans[i].iterations);
+        VOS_TRACE(VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_INFO,
+                  "scan plan - %d, interval = %d",
+                  i, request->scan_plans[i].interval);
     }
 }
 #else
