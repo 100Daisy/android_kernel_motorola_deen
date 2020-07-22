@@ -67,8 +67,8 @@ SAP_AUTH_OFFLOAD := y
 
 # To enable CONFIG_QCOM_ESE_UPLOAD, dependent config
 # CONFIG_QCOM_ESE must be enabled.
-CONFIG_QCOM_ESE := y
-CONFIG_QCOM_ESE_UPLOAD := y
+CONFIG_QCOM_ESE := n
+CONFIG_QCOM_ESE_UPLOAD := n
 
 # Feature flags which are not (currently) configurable via Kconfig
 
@@ -106,7 +106,11 @@ else
 endif # ANDROID_BUILD_TOP
 else
 ifneq ($(ANDROID_BUILD_TOP),)
+ifeq ($(TARGET_PRODUCT),sdm429w)
     WLAN_BLD_DIR := $(ANDROID_BUILD_TOP)/device/qcom/sdm429w/common/opensource/wlan
+else
+    WLAN_BLD_DIR := $(ANDROID_BUILD_TOP)/vendor/qcom/opensource/wlan
+endif #TARGET_PRODUCT
 else
     WLAN_BLD_DIR := $(BOARD_OPENSOURCE_DIR)/wlan
 endif # ANDROID_BUILD_TOP
@@ -712,9 +716,6 @@ endif
 # enable the MAC Address auto-generation feature
 CDEFINES += -DWLAN_AUTOGEN_MACADDR_FEATURE
 
-# Moto read MACs from boot params instead of NV file
-CDEFINES += -DMOTO_UTAGS_MAC
-
 ifeq ($(CONFIG_WLAN_FEATURE_11W),y)
 CDEFINES += -DWLAN_FEATURE_11W
 endif
@@ -764,12 +765,6 @@ endif
 
 # Fix build for GCC 4.7
 EXTRA_CFLAGS += $(call cc-option,-Wno-maybe-uninitialized) -Wno-unused-function -Wno-enum-conversion -Wno-array-bounds -Wno-pointer-bool-conversion -Wno-parentheses-equality -Wno-typedef-redefinition -Wno-empty-body -Wno-non-literal-null-conversion
-
-# Silence Clang warning
-ifeq ($(cc-name),clang)
-EXTRA_CFLAGS += $(call cc-option, -Wframe-larger-than=2048)
-EXTRA_CFLAGS += -Wno-enum-conversion
-endif
 
 ifeq ($(CONFIG_WLAN_OFFLOAD_PACKETS),y)
 CDEFINES += -DWLAN_FEATURE_OFFLOAD_PACKETS

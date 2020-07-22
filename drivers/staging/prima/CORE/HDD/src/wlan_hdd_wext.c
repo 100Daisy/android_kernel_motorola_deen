@@ -179,10 +179,6 @@ static const hdd_freq_chan_map_t freq_chan_map[] = { {2412, 1}, {2417, 2},
 #define  WE_SET_MODULATED_DTIM    26
 #define WLAN_SET_DYNNAMIC_AGGREGATION 27
 
-// BEGIN IKSWM-15907, Motorola, w18918
-#define WE_SET_CHANNEL_RANGE 90
-// END IKSWM-15907, Motorola, w18918
-
 /* Private ioctls and their sub-ioctls */
 #define WLAN_PRIV_SET_NONE_GET_INT    (SIOCIWFIRSTPRIV + 1)
 #define WE_GET_11D_STATE     1
@@ -4792,7 +4788,7 @@ static int __iw_set_encodeext(struct net_device *dev,
        }
        else {
          /*Static wep, update the roam profile with the keys */
-          if(ext->key_len <= eCSR_SECURITY_WEP_KEYSIZE_MAX_BYTES &&
+          if(ext->key && (ext->key_len <= eCSR_SECURITY_WEP_KEYSIZE_MAX_BYTES) &&
                                                                key_index < CSR_MAX_NUM_KEY) {
              vos_mem_copy(&pRoamProfile->Keys.KeyMaterial[key_index][0],ext->key,ext->key_len);
              pRoamProfile->Keys.KeyLength[key_index] = (v_U8_t)ext->key_len;
@@ -5915,32 +5911,6 @@ static int __iw_setint_getnone(struct net_device *dev,
 
            break;
         }
-        // Motorola, IKJBREL1-4181
-        case WE_SET_CHANNEL_RANGE:
-        {
-            int startChannel, endChannel;
-            if (set_value == 3) {
-                startChannel = 149;
-                endChannel   = 161;
-            } else if (set_value == 2) {
-                startChannel = 100;
-                endChannel   = 144;
-            } else if (set_value == 1) {
-                startChannel = 36;
-                endChannel   = 64;
-            } else {
-                set_value = 0;
-                startChannel = 1;
-                //BEGIN MOT a19110 IKJBXLINE-2149 MHS frequency band support
-                //Motorola jmng34 IKSWM-2195-Restrict mhs 2.4 ghz channels to FCC
-                endChannel   = 11;
-                //END IKJBXLINE-2149
-            }
-
-            ret = iw_softap_set_channel_range( dev, startChannel, endChannel, set_value);
-            break;
-        }
-       // End IKJBREL1-4181
 
         case WE_ENABLE_STRICT_FCC_REG:
         {

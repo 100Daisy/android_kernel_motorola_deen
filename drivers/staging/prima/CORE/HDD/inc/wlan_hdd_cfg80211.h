@@ -204,9 +204,6 @@ enum qca_nl80211_vendor_subcmds {
     /* Get Concurrency Matrix */
     QCA_NL80211_VENDOR_SUBCMD_GET_CONCURRENCY_MATRIX = 42,
     QCA_NL80211_VENDOR_SUBCMD_APFIND = 52,
-
-    QCA_NL80211_VENDOR_SUBCMD_DO_ACS = 54, //IKLOCSEN-3054, MOTO Gambugge
-
     /* Start Wifi Logger */
     QCA_NL80211_VENDOR_SUBCMD_WIFI_LOGGER_START = 62,
 
@@ -500,8 +497,6 @@ enum qca_nl80211_vendor_subcmds_index {
     QCA_NL80211_VENDOR_SUBCMD_NUD_STATS_GET_INDEX,
     QCA_NL80211_VENDOR_SUBCMD_HANG_REASON_INDEX,
     QCA_NL80211_VENDOR_SUBCMD_LINK_PROPERTIES_INDEX,
-
-    QCA_NL80211_VENDOR_SUBCMD_DO_ACS_INDEX, //IKLOCSEN-3054, MOTO Gambugge
 };
 
 /**
@@ -2122,6 +2117,11 @@ static inline
 void wlan_hdd_cfg80211_scan_randomization_init(struct wiphy *wiphy)
 {
 }
+#endif
+
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+#define nla_parse(a, b, c, d, e) nla_parse(a, b, c, d, e, NULL)
+#define cfg80211_sched_scan_results(a) cfg80211_sched_scan_results(a, 0)
 #endif
 
 #endif

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2020 The Linux Foundation. All rights reserved.
  *
  * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
  *
@@ -135,9 +135,11 @@
     .flags = flag, \
 }
 
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0))
 #ifdef WLAN_FEATURE_VOWIFI_11R
 #define WLAN_AKM_SUITE_FT_8021X         0x000FAC03
 #define WLAN_AKM_SUITE_FT_PSK           0x000FAC04
+#endif
 #endif
 
 #define HDD_CHANNEL_14 14
@@ -6637,288 +6639,6 @@ static int wlan_hdd_cfg80211_firmware_roaming(struct wiphy *wiphy,
     return ret;
 }
 
-//IKLOCSEN-3054, MOTO Gambugge, 10/16/2017 – implement do_acs() in WLAN driver
-/**
- * enum qca_wlan_vendor_attr_acs_offload
- *
- * @QCA_WLAN_VENDOR_ATTR_ACS_PRIMARY_CHANNEL: ACS selected primary channel
- * @QCA_WLAN_VENDOR_ATTR_ACS_SECONDARY_CHANNEL: ACS selected secondary channel
- * @QCA_WLAN_VENDOR_ATTR_ACS_HW_MODE: hw_mode for ACS
- * @QCA_WLAN_VENDOR_ATTR_ACS_HT_ENABLED: indicate if HT capability is enabled
- * @QCA_WLAN_VENDOR_ATTR_ACS_HT40_ENABLED: indicate HT capability
- */
-enum qca_wlan_vendor_attr_acs_offload {
-    QCA_WLAN_VENDOR_ATTR_ACS_CHANNEL_INVALID = 0,
-    QCA_WLAN_VENDOR_ATTR_ACS_PRIMARY_CHANNEL,
-    QCA_WLAN_VENDOR_ATTR_ACS_SECONDARY_CHANNEL,
-    QCA_WLAN_VENDOR_ATTR_ACS_HW_MODE,
-    QCA_WLAN_VENDOR_ATTR_ACS_HT_ENABLED,
-    QCA_WLAN_VENDOR_ATTR_ACS_HT40_ENABLED,
-    QCA_WLAN_VENDOR_ATTR_ACS_VHT_ENABLED,
-    QCA_WLAN_VENDOR_ATTR_ACS_CHWIDTH,
-    QCA_WLAN_VENDOR_ATTR_ACS_CH_LIST,
-    QCA_WLAN_VENDOR_ATTR_ACS_VHT_SEG0_CENTER_CHANNEL,
-    QCA_WLAN_VENDOR_ATTR_ACS_VHT_SEG1_CENTER_CHANNEL,
-    QCA_WLAN_VENDOR_ATTR_ACS_FREQ_LIST,
-    /* keep last */
-    QCA_WLAN_VENDOR_ATTR_ACS_AFTER_LAST,
-    QCA_WLAN_VENDOR_ATTR_ACS_MAX =
-    QCA_WLAN_VENDOR_ATTR_ACS_AFTER_LAST - 1
-};
-
-/**
- * enum qca_wlan_vendor_acs_hw_mode
- *
- * @QCA_ACS_MODE_IEEE80211B: 11b mode
- * @QCA_ACS_MODE_IEEE80211G: 11g mode
- * @QCA_ACS_MODE_IEEE80211A: 11a mode
- * @QCA_ACS_MODE_IEEE80211AD: 11ad mode
- */
- enum qca_wlan_vendor_acs_hw_mode {
-    QCA_ACS_MODE_IEEE80211B,
-    QCA_ACS_MODE_IEEE80211G,
-    QCA_ACS_MODE_IEEE80211A,
-    QCA_ACS_MODE_IEEE80211AD,
-    QCA_ACS_MODE_IEEE80211ANY,
-};
-
-static const struct nla_policy
-wlan_hdd_cfg80211_do_acs_policy[QCA_WLAN_VENDOR_ATTR_ACS_MAX+1] = {
-    [QCA_WLAN_VENDOR_ATTR_ACS_HW_MODE] = { .type = NLA_U8 },
-    [QCA_WLAN_VENDOR_ATTR_ACS_HT_ENABLED] = { .type = NLA_FLAG },
-    [QCA_WLAN_VENDOR_ATTR_ACS_HT40_ENABLED] = { .type = NLA_FLAG },
-    [QCA_WLAN_VENDOR_ATTR_ACS_VHT_ENABLED] = { .type = NLA_FLAG },
-    [QCA_WLAN_VENDOR_ATTR_ACS_CHWIDTH] = { .type = NLA_U16 },
-    [QCA_WLAN_VENDOR_ATTR_ACS_CH_LIST] = { .type = NLA_UNSPEC },
-    [QCA_WLAN_VENDOR_ATTR_ACS_FREQ_LIST] = { .type = NLA_UNSPEC },
-};
-
-/**
- * wlan_hdd_cfg80211_acs_ch_select_evt: Callback function for ACS evt
- * @adapter: Pointer to SAP adapter struct
- * @pri_channel: SAP ACS procedure selected Primary channel
- * @sec_channel: SAP ACS procedure selected secondary channel
- *
- * This is a callback function from SAP module on ACS procedure is completed.
- * This function send the ACS selected channel information to hostapd
- *
- * Return: None
- */
-
-void wlan_hdd_cfg80211_acs_ch_select_evt(hdd_adapter_t *adapter, tChannelListInfo channel_list)
-{
-    hdd_context_t *hdd_ctx = WLAN_HDD_GET_CTX(adapter);
-    struct sk_buff *vendor_event;
-    int ret_val;
-    uint16_t ch_width;
-
-    vendor_event = cfg80211_vendor_event_alloc(hdd_ctx->wiphy,
-        &(adapter->wdev),
-        4 * sizeof(u8) + 1 * sizeof(u16) + 4 + NLMSG_HDRLEN,
-        QCA_NL80211_VENDOR_SUBCMD_DO_ACS_INDEX,
-        GFP_KERNEL);
-    if (!vendor_event) {
-        hddLog(VOS_TRACE_LEVEL_ERROR, "cfg80211_vendor_event_alloc failed");
-        return;
-    }
-
-    ret_val = nla_put_u8(vendor_event,
-        QCA_WLAN_VENDOR_ATTR_ACS_PRIMARY_CHANNEL,
-        channel_list.channels[0]);
-    if (ret_val) {
-        hddLog(VOS_TRACE_LEVEL_ERROR, "QCA_WLAN_VENDOR_ATTR_ACS_PRIMARY_CHANNEL put fail");
-        kfree_skb(vendor_event);
-        return;
-    }
-
-    ret_val = nla_put_u8(vendor_event,
-        QCA_WLAN_VENDOR_ATTR_ACS_SECONDARY_CHANNEL,
-        0); // IKSWO-21203, Moto, gambugge, Fix channel set failure in nl80211 driver
-    if (ret_val) {
-        hddLog(VOS_TRACE_LEVEL_ERROR, "QCA_WLAN_VENDOR_ATTR_ACS_SECONDARY_CHANNEL put fail");
-        kfree_skb(vendor_event);
-        return;
-    }
-
-    ch_width = 20;
-
-    ret_val = nla_put_u16(vendor_event,
-        QCA_WLAN_VENDOR_ATTR_ACS_CHWIDTH,
-        ch_width);
-    if (ret_val) {
-        hddLog(VOS_TRACE_LEVEL_ERROR, "QCA_WLAN_VENDOR_ATTR_ACS_CHWIDTH put fail");
-        kfree_skb(vendor_event);
-        return;
-    }
-
-    if (channel_list.channels[channel_list.num_channels - 1] > 14)
-        ret_val = nla_put_u8(vendor_event,
-            QCA_WLAN_VENDOR_ATTR_ACS_HW_MODE,
-            QCA_ACS_MODE_IEEE80211A);
-    else
-        ret_val = nla_put_u8(vendor_event,
-        QCA_WLAN_VENDOR_ATTR_ACS_HW_MODE,
-        QCA_ACS_MODE_IEEE80211G);
-
-    if (ret_val) {
-        hddLog(VOS_TRACE_LEVEL_ERROR, "QCA_WLAN_VENDOR_ATTR_ACS_HW_MODE put fail");
-        kfree_skb(vendor_event);
-        return;
-    }
-
-    hddLog(VOS_TRACE_LEVEL_INFO, "ACS result for wlan0: PRI_CH: %d SEC_CH: %d",
-        channel_list.channels[0],
-        channel_list.channels[channel_list.num_channels - 1]);
-
-    cfg80211_vendor_event(vendor_event, GFP_KERNEL);
-
-    return;
-}
-
-/**
- * __wlan_hdd_cfg80211_do_acs(): CFG80211 handler function for DO_ACS Vendor CMD
- * @wiphy:  Linux wiphy struct pointer
- * @wdev:   Linux wireless device struct pointer
- * @data:   ACS information from hostapd
- * @data_len: ACS information length
- *
- * This function handle DO_ACS Vendor command from hostapd, parses ACS config
- * and starts ACS procedure.
- *
- * Return: ACS procedure start status
- */
-static int __wlan_hdd_cfg80211_do_acs(struct wiphy *wiphy,
-  struct wireless_dev *wdev,
-  const void *data, int data_len)
-{
-    VOS_STATUS status;
-    struct net_device *dev = wdev->netdev;
-    hdd_adapter_t *pAdapter = WLAN_HDD_GET_PRIV_PTR(dev);
-    tHalHandle hHal = WLAN_HDD_GET_HAL_CTX(pAdapter);
-    tChannelListInfo channel_list;
-    int currentBand = 0;
-    struct nlattr *tb[QCA_WLAN_VENDOR_ATTR_ACS_MAX + 1];
-    uint8_t hw_mode;
-    int i;
-
-    if (NULL == wdev) {
-        hddLog(VOS_TRACE_LEVEL_ERROR, "%s: wdev is Null", __func__);
-        return -ENODEV;
-    }
-
-    if (NULL == wdev->netdev) {
-        hddLog(VOS_TRACE_LEVEL_ERROR, "%s: dev is Null", __func__);
-        return -ENODEV;
-    }
-
-    status = nla_parse(tb, QCA_WLAN_VENDOR_ATTR_ACS_MAX, data, data_len,
-                       wlan_hdd_cfg80211_do_acs_policy);
-    if (status) {
-        hddLog(VOS_TRACE_LEVEL_ERROR, "DO_ACS NL CMD parsing failed");
-        return -EINVAL;
-    }
-
-    if (!tb[QCA_WLAN_VENDOR_ATTR_ACS_HW_MODE]) {
-        hddLog(VOS_TRACE_LEVEL_ERROR, "Attr hw_mode failed");
-        return -EINVAL;
-    }
-    hw_mode = nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_ACS_HW_MODE]);
-
-    /* hw_mode = a/b/g: QCA_WLAN_VENDOR_ATTR_ACS_CH_LIST and
-    * QCA_WLAN_VENDOR_ATTR_ACS_FREQ_LIST attrs are present, and
-    * QCA_WLAN_VENDOR_ATTR_ACS_CH_LIST is used for obtaining the
-    * channel list, QCA_WLAN_VENDOR_ATTR_ACS_FREQ_LIST is ignored
-    * since it contains the frequency values of the channels in
-    * the channel list.
-    * hw_mode = any: only QCA_WLAN_VENDOR_ATTR_ACS_FREQ_LIST attr
-    * is present
-    */
-    if (tb[QCA_WLAN_VENDOR_ATTR_ACS_CH_LIST]) {
-        char *tmp = nla_data(tb[QCA_WLAN_VENDOR_ATTR_ACS_CH_LIST]);
-        channel_list.num_channels = nla_len(
-            tb[QCA_WLAN_VENDOR_ATTR_ACS_CH_LIST]);
-        if (channel_list.num_channels) {
-            memcpy(channel_list.channels, tmp,
-                channel_list.num_channels);
-        }
-    } else if (tb[QCA_WLAN_VENDOR_ATTR_ACS_FREQ_LIST]) {
-        uint32_t *freq =
-        nla_data(tb[QCA_WLAN_VENDOR_ATTR_ACS_FREQ_LIST]);
-        channel_list.num_channels = nla_len(
-        tb[QCA_WLAN_VENDOR_ATTR_ACS_FREQ_LIST]) /
-        sizeof(uint32_t);
-        if (channel_list.num_channels) {
-        /* convert frequency to channel */
-        for (i = 0; i < channel_list.num_channels; i++)
-            channel_list.channels[i] =
-                ieee80211_frequency_to_channel(freq[i]);
-        }
-    }
-
-    if (channel_list.num_channels >=1) {
-        if (hw_mode == QCA_ACS_MODE_IEEE80211A) {
-            currentBand =
-                (channel_list.channels[channel_list.num_channels - 1] >= 149) ? 3 :
-                (channel_list.channels[channel_list.num_channels - 1] >= 100) ? 2 :
-                (channel_list.channels[channel_list.num_channels - 1] >=  36) ? 1 : 0;
-        } else { // Auto 2.4 Ghz
-            currentBand = 0;
-        }
-    }
-
-    hddLog(VOS_TRACE_LEVEL_INFO,
-            "ACS Config for wlan0: HW_MODE: %d NUM CHANNELS: %d START_CH: %d"
-            "END_CH: %d currentBand: %d",
-            hw_mode,
-            channel_list.num_channels,
-            channel_list.channels[0],
-            channel_list.channels[channel_list.num_channels - 1],
-            currentBand);
-
-    status = WLANSAP_SetChannelRange(hHal,
-            channel_list.channels[0],
-            channel_list.channels[channel_list.num_channels - 1],
-            currentBand);
-
-    if (!VOS_IS_STATUS_SUCCESS(status)) {
-        hddLog(VOS_TRACE_LEVEL_ERROR, "%s SetChannelRange Failed!!!",__func__);
-        return -EINVAL;
-    }
-
-    (WLAN_HDD_GET_CTX(pAdapter))->is_dynamic_channel_range_set = 1;
-    (WLAN_HDD_GET_CTX(pAdapter))->cfg_ini->apAutoChannelSelection = 1;
-
-    wlan_hdd_cfg80211_acs_ch_select_evt(pAdapter, channel_list);
-
-    return status;
-}
-
-/**
-* wlan_hdd_cfg80211_do_acs : CFG80211 handler function for DO_ACS Vendor CMD
-* @wiphy:  Linux wiphy struct pointer
-* @wdev:   Linux wireless device struct pointer
-* @data:   ACS information from hostapd
-* @data_len: ACS information len
-*
-* This function handle DO_ACS Vendor command from hostapd, parses ACS config
-* and starts ACS procedure.
-*
-* Return: ACS procedure start status
-*/
-static int wlan_hdd_cfg80211_do_acs(struct wiphy *wiphy,
-  struct wireless_dev *wdev,
-  const void *data, int data_len)
-{
-    int ret;
-
-    vos_ssr_protect(__func__);
-    ret = __wlan_hdd_cfg80211_do_acs(wiphy, wdev, data, data_len);
-    vos_ssr_unprotect(__func__);
-
-    return ret;
-}
-//END IKLOCSEN-3054
-
 static const struct
 nla_policy
 qca_wlan_vendor_get_wifi_info_policy[
@@ -9321,16 +9041,6 @@ const struct wiphy_vendor_command hdd_wiphy_vendor_commands[] =
                  WIPHY_VENDOR_CMD_NEED_NETDEV,
         .doit = wlan_hdd_cfg80211_get_logger_supp_feature
    },
-    //IKLOCSEN-3054, MOTO Gambugge, 10/16/2017 – implement do_acs() in WLAN driver
-    {
-        .info.vendor_id = QCA_NL80211_VENDOR_ID,
-        .info.subcmd = QCA_NL80211_VENDOR_SUBCMD_DO_ACS,
-        .flags = WIPHY_VENDOR_CMD_NEED_WDEV |
-            WIPHY_VENDOR_CMD_NEED_NETDEV |
-            WIPHY_VENDOR_CMD_NEED_RUNNING,
-        .doit = wlan_hdd_cfg80211_do_acs
-    },
-    //END IKLOCSEN-3054
 };
 
 /* vendor specific events */
@@ -9451,12 +9161,6 @@ struct nl80211_vendor_cmd_info wlan_hdd_cfg80211_vendor_events[] =
          .vendor_id = QCA_NL80211_VENDOR_ID,
          .subcmd = QCA_NL80211_VENDOR_SUBCMD_LINK_PROPERTIES,
     },
-    //IKLOCSEN-3054, MOTO Gambugge, 10/16/2017 – implement do_acs() in WLAN driver
-    [QCA_NL80211_VENDOR_SUBCMD_DO_ACS_INDEX] = {
-        .vendor_id = QCA_NL80211_VENDOR_ID,
-        .subcmd = QCA_NL80211_VENDOR_SUBCMD_DO_ACS
-    },
-    //END IKLOCSEN-3054
 };
 
 /*
@@ -9715,7 +9419,11 @@ int wlan_hdd_cfg80211_init(struct device *dev,
 #ifdef FEATURE_WLAN_SCAN_PNO
     if (pCfg->configPNOScanSupport)
     {
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+	wiphy->max_sched_scan_reqs = 1;
+#else
         wiphy->flags |= WIPHY_FLAG_SUPPORTS_SCHED_SCAN;
+#endif
         wiphy->max_sched_scan_ssids = SIR_PNO_MAX_SUPP_NETWORKS;
         wiphy->max_match_sets       = SIR_PNO_MAX_SUPP_NETWORKS;
         wiphy->max_sched_scan_ie_len = SIR_MAC_MAX_IE_LENGTH;
@@ -11365,6 +11073,12 @@ int wlan_hdd_restore_channels(hdd_context_t *hdd_ctx)
 	status = sme_update_channel_list((tpAniSirGlobal)hdd_ctx->hHal);
 	if (status)
 		hddLog(VOS_TRACE_LEVEL_ERROR, "Can't Restore channel list");
+	else
+		/*
+		 * Free the cache channels when the
+		 * disabled channels are restored
+		 */
+		wlan_hdd_free_cache_channels(hdd_ctx);
 	EXIT();
 
 	return 0;
@@ -11466,7 +11180,6 @@ static int wlan_hdd_cfg80211_start_bss(hdd_adapter_t *pHostapdAdapter,
     struct ieee80211_mgmt *pMgmt_frame;
     v_U8_t *pIe=NULL;
     v_U16_t capab_info;
-    eCsrAuthType RSNAuthType;
     eCsrEncryptionType RSNEncryptType;
     eCsrEncryptionType mcRSNEncryptType;
     int status = VOS_STATUS_SUCCESS, ret = 0;
@@ -11477,6 +11190,7 @@ static int wlan_hdd_cfg80211_start_bss(hdd_adapter_t *pHostapdAdapter,
     struct qc_mac_acl_entry *acl_entry = NULL;
     hdd_config_t *iniConfig;
     v_SINT_t i;
+    uint32_t ii;
     hdd_context_t *pHddCtx = WLAN_HDD_GET_CTX(pHostapdAdapter);
     hdd_adapter_t *sta_adapter;
     tSmeConfigParams *psmeConfig;
@@ -11707,7 +11421,7 @@ static int wlan_hdd_cfg80211_start_bss(hdd_adapter_t *pHostapdAdapter,
                         vos_get_context( VOS_MODULE_ID_SME, pVosContext),
                         &RSNEncryptType,
                         &mcRSNEncryptType,
-                        &RSNAuthType,
+                        &pConfig->akm_list,
                         &MFPCapable,
                         &MFPRequired,
                         pConfig->RSNWPAReqIE[1]+2,
@@ -11722,9 +11436,11 @@ static int wlan_hdd_cfg80211_start_bss(hdd_adapter_t *pHostapdAdapter,
             pConfig->mcRSNEncryptType = mcRSNEncryptType;
             (WLAN_HDD_GET_AP_CTX_PTR(pHostapdAdapter))->ucEncryptType
                                                               = RSNEncryptType;
-            hddLog( LOG1, FL("CSR AuthType = %d, "
-                        "EncryptionType = %d mcEncryptionType = %d"),
-                        RSNAuthType, RSNEncryptType, mcRSNEncryptType);
+            hddLog( LOG1, FL("CSR EncryptionType = %d mcEncryptionType = %d"),
+                    RSNEncryptType, mcRSNEncryptType);
+            for (ii = 0; ii < pConfig->akm_list.numEntries; ii++)
+                    hddLog(LOG1, FL("CSR AKM Suite [%d] = %d"), ii,
+                        pConfig->akm_list.authType[ii]);
         }
     }
 
@@ -11760,7 +11476,7 @@ static int wlan_hdd_cfg80211_start_bss(hdd_adapter_t *pHostapdAdapter,
                           vos_get_context( VOS_MODULE_ID_SME, pVosContext),
                           &RSNEncryptType,
                           &mcRSNEncryptType,
-                          &RSNAuthType,
+                          &pConfig->akm_list,
                           &MFPCapable,
                           &MFPRequired,
                           pConfig->RSNWPAReqIE[1]+2,
@@ -11775,9 +11491,11 @@ static int wlan_hdd_cfg80211_start_bss(hdd_adapter_t *pHostapdAdapter,
                 pConfig->mcRSNEncryptType = mcRSNEncryptType;
                 (WLAN_HDD_GET_AP_CTX_PTR(pHostapdAdapter))->ucEncryptType
                                                               = RSNEncryptType;
-                hddLog( LOG1, FL("CSR AuthType = %d, "
-                                "EncryptionType = %d mcEncryptionType = %d"),
-                                RSNAuthType, RSNEncryptType, mcRSNEncryptType);
+                hddLog(LOG1, FL("CSR EncryptionType= %d mcEncryptionType= %d"),
+                       RSNEncryptType, mcRSNEncryptType);
+                for (ii = 0; ii < pConfig->akm_list.numEntries; ii++)
+                        hddLog(LOG1, FL("CSR AKM Suite [%d] = %d"), ii,
+                            pConfig->akm_list.authType[ii]);
             }
         }
     }
@@ -12312,6 +12030,8 @@ static int __wlan_hdd_cfg80211_stop_ap (struct wiphy *wiphy,
     hdd_context_t  *pHddCtx    = NULL;
     hdd_scaninfo_t *pScanInfo  = NULL;
     VOS_STATUS status;
+    eHalStatus      halstatus;
+    tHalHandle      hal_ptr    = WLAN_HDD_GET_HAL_CTX(pAdapter);
     long ret;
 
     ENTER();
@@ -12349,6 +12069,14 @@ static int __wlan_hdd_cfg80211_stop_ap (struct wiphy *wiphy,
         hddLog(LOG1, FL("disconnecting sta with session id: %d"),
                staAdapter->sessionId);
         wlan_hdd_disconnect(staAdapter, eCSR_DISCONNECT_REASON_DEAUTH);
+    }
+
+    if (WLAN_HDD_SOFTAP == pAdapter->device_mode) {
+        halstatus = sme_RoamDelPMKIDfromCache(
+                        hal_ptr, pAdapter->sessionId,
+                        NULL, true);
+        if (!HAL_STATUS_SUCCESS(halstatus))
+            hddLog(LOG1, FL("Cannot flush PMKIDCache"));
     }
 
     ret = wlan_hdd_scan_abort(pAdapter);
@@ -13222,14 +12950,24 @@ done:
  * FUNCTION: wlan_hdd_cfg80211_change_iface
  * wrapper function to protect the actual implementation from SSR.
  */
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+int wlan_hdd_cfg80211_change_iface(struct wiphy *wiphy,
+                                   struct net_device *ndev,
+                                   enum nl80211_iftype type,
+                                   struct vif_params *params)
+#else
 int wlan_hdd_cfg80211_change_iface( struct wiphy *wiphy,
                                     struct net_device *ndev,
                                     enum nl80211_iftype type,
                                     u32 *flags,
                                     struct vif_params *params
                                   )
+#endif
 {
     int ret;
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+    u32 *flags = NULL;
+#endif
 
     vos_ssr_protect(__func__);
     ret = __wlan_hdd_cfg80211_change_iface(wiphy, ndev, type, flags, params);
@@ -14727,7 +14465,11 @@ static struct cfg80211_bss* wlan_hdd_cfg80211_inform_bss(
     freq = ieee80211_channel_to_frequency(chan_no);
 #endif
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,14,0))
+    chan = ieee80211_get_channel(wiphy, freq);
+#else
     chan = __ieee80211_get_channel(wiphy, freq);
+#endif
 
     if (!chan) {
        hddLog(VOS_TRACE_LEVEL_ERROR, "%s chan pointer is NULL", __func__);
@@ -14900,7 +14642,13 @@ wlan_hdd_cfg80211_inform_bss_frame( hdd_adapter_t *pAdapter,
 #else
     freq = ieee80211_channel_to_frequency(chan_no);
 #endif
+
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,14,0))
+    chan = ieee80211_get_channel(wiphy, freq);
+#else
     chan = __ieee80211_get_channel(wiphy, freq);
+#endif
+
     /*when the band is changed on the fly using the GUI, three things are done
      * 1. scan abort 2.flush scan results from cache 3.update the band with the new band user specified(refer to the hdd_setBand_helper function)
      * as part of the scan abort, message willbe queued to PE and we proceed with flushing and changinh the band.
@@ -20099,6 +19847,45 @@ static int wlan_hdd_cfg80211_flush_pmksa(struct wiphy *wiphy, struct net_device 
 
 #if defined(WLAN_FEATURE_SAE) && \
          defined(CFG80211_EXTERNAL_AUTH_SUPPORT)
+#if defined(CFG80211_EXTERNAL_AUTH_AP_SUPPORT)
+/**
+ * wlan_hdd_extauth_cache_pmkid() - Extract and cache pmkid
+ * @adapter: hdd vdev/net_device context
+ * @hHal: Handle to the hal
+ * @params: Pointer to external auth params.
+ *
+ * Extract the PMKID and BSS from external auth params and add to the
+ * PMKSA Cache in CSR.
+ */
+static void
+wlan_hdd_extauth_cache_pmkid(hdd_adapter_t *adapter,
+                            tHalHandle hHal,
+                            struct cfg80211_external_auth_params *params)
+{
+    tPmkidCacheInfo pmk_cache;
+    VOS_STATUS result;
+
+    if (params->pmkid) {
+            vos_mem_zero(&pmk_cache, sizeof(pmk_cache));
+            vos_mem_copy(pmk_cache.BSSID, params->bssid,
+                        VOS_MAC_ADDR_SIZE);
+            vos_mem_copy(pmk_cache.PMKID, params->pmkid,
+                        CSR_RSN_PMKID_SIZE);
+            result = sme_RoamSetPMKIDCache(hHal, adapter->sessionId,
+                                        &pmk_cache, 1, false);
+            if (!VOS_IS_STATUS_SUCCESS(result))
+                    hddLog(VOS_TRACE_LEVEL_ERROR,
+                            FL("external_auth: Failed to cache PMKID"));
+    }
+}
+#else
+static void
+wlan_hdd_extauth_cache_pmkid(hdd_adapter_t *adapter,
+                            tHalHandle hHal,
+                            struct cfg80211_external_auth_params *params)
+{}
+#endif
+
 /**
  * __wlan_hdd_cfg80211_external_auth() - Handle external auth
  * @wiphy: Pointer to wireless phy
@@ -20106,30 +19893,42 @@ static int wlan_hdd_cfg80211_flush_pmksa(struct wiphy *wiphy, struct net_device 
  * @params: Pointer to external auth params
  *
  * Return: 0 on success, negative errno on failure
+ *
+ * Userspace sends status of the external authentication(e.g., SAE) with a peer.
+ * The message carries BSSID of the peer and auth status (WLAN_STATUS_SUCCESS/
+ * WLAN_STATUS_UNSPECIFIED_FAILURE) in params.
+ * Userspace may send PMKID in params, which can be used for
+ * further connections.
  */
 static int
 __wlan_hdd_cfg80211_external_auth(struct wiphy *wiphy, struct net_device *dev,
                                   struct cfg80211_external_auth_params *params)
 {
-   hdd_context_t *hdd_ctx = wiphy_priv(wiphy);
-   hdd_adapter_t *adapter = WLAN_HDD_GET_PRIV_PTR(dev);
-   int ret;
+    hdd_context_t *hdd_ctx = wiphy_priv(wiphy);
+    hdd_adapter_t *adapter = WLAN_HDD_GET_PRIV_PTR(dev);
+    int ret;
+    tSirMacAddr peer_mac_addr;
 
-   if (hdd_get_conparam() == VOS_FTM_MODE) {
-       hddLog(VOS_TRACE_LEVEL_ERROR, FL("Command not allowed in FTM mode"));
-       return -EPERM;
-   }
+    if (hdd_get_conparam() == VOS_FTM_MODE) {
+        hddLog(VOS_TRACE_LEVEL_ERROR, FL("Command not allowed in FTM mode"));
+        return -EPERM;
+    }
 
-   ret = wlan_hdd_validate_context(hdd_ctx);
-   if (ret)
-       return ret;
+    ret = wlan_hdd_validate_context(hdd_ctx);
+    if (ret)
+        return ret;
 
-   hddLog(VOS_TRACE_LEVEL_DEBUG, FL("external_auth status: %d"),
-          params->status);
+    hddLog(VOS_TRACE_LEVEL_DEBUG,
+            FL("external_auth status: %d peer mac: " MAC_ADDRESS_STR),
+            params->status, MAC_ADDR_ARRAY(params->bssid));
+    vos_mem_copy(peer_mac_addr, params->bssid, VOS_MAC_ADDR_SIZE);
 
-   sme_handle_sae_msg(hdd_ctx->hHal, adapter->sessionId, params->status);
+    wlan_hdd_extauth_cache_pmkid(adapter, hdd_ctx->hHal, params);
 
-   return ret;
+    sme_handle_sae_msg(hdd_ctx->hHal, adapter->sessionId, params->status,
+                        peer_mac_addr);
+
+    return ret;
 }
 
 /**
@@ -20867,8 +20666,13 @@ error:
  * FUNCTION: wlan_hdd_cfg80211_sched_scan_stop
  * NL interface to disable PNO
  */
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+static int wlan_hdd_cfg80211_sched_scan_stop(struct wiphy *wiphy,
+          struct net_device *dev, u64 reqid)
+#else
 static int wlan_hdd_cfg80211_sched_scan_stop(struct wiphy *wiphy,
           struct net_device *dev)
+#endif
 {
     int ret;
 

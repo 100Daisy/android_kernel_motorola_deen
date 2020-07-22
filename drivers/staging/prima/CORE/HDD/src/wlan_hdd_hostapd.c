@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2018 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2018, 2020 The Linux Foundation. All rights reserved.
  *
  * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
  *
@@ -1097,7 +1097,11 @@ static VOS_STATUS hdd_chan_change_notify(hdd_adapter_t *hostapd_adapter,
 
    freq = vos_chan_to_freq(oper_chan);
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,14,0))
+   chan = ieee80211_get_channel(hostapd_adapter->wdev.wiphy, freq);
+#else
    chan = __ieee80211_get_channel(hostapd_adapter->wdev.wiphy, freq);
+#endif
 
    if (!chan) {
        VOS_TRACE(VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_ERROR,
@@ -1293,6 +1297,7 @@ VOS_STATUS hdd_hostapd_SAPEventCB( tpSap_Event pSapEvent, v_PVOID_t usrDataForCa
     v_CONTEXT_t pVosContext = NULL;
     ptSapContext pSapCtx = NULL;
     hdd_config_t *cfg_param;
+    tSap_StationAssocReassocCompleteEvent *event;
 
     dev = (struct net_device *)usrDataForCallback;
     pHostapdAdapter = netdev_priv(dev);
@@ -1463,6 +1468,7 @@ VOS_STATUS hdd_hostapd_SAPEventCB( tpSap_Event pSapEvent, v_PVOID_t usrDataForCa
         
         case eSAP_STA_ASSOC_EVENT:
         case eSAP_STA_REASSOC_EVENT:
+            event = &pSapEvent->sapevt.sapStationAssocReassocCompleteEvent;
             wrqu.addr.sa_family = ARPHRD_ETHER;
             memcpy(wrqu.addr.sa_data, &pSapEvent->sapevt.sapStationAssocReassocCompleteEvent.staMac, 
                 sizeof(v_MACADDR_t));
@@ -1554,11 +1560,8 @@ VOS_STATUS hdd_hostapd_SAPEventCB( tpSap_Event pSapEvent, v_PVOID_t usrDataForCa
                 }
 
                 memset(staInfo, 0, sizeof(*staInfo));
-                if (iesLen <= MAX_ASSOC_IND_IE_LEN )
-                {
-                    staInfo->assoc_req_ies =
-                        (const u8 *)&pSapEvent->sapevt.sapStationAssocReassocCompleteEvent.ies[0];
-                    staInfo->assoc_req_ies_len = iesLen;
+                staInfo->assoc_req_ies = event->ies;
+                staInfo->assoc_req_ies_len = iesLen;
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,0,31)) && \
 	((LINUX_VERSION_CODE < KERNEL_VERSION(4, 0, 0)) && \
 	!defined(WITH_BACKPORTS))
@@ -1568,11 +1571,6 @@ VOS_STATUS hdd_hostapd_SAPEventCB( tpSap_Event pSapEvent, v_PVOID_t usrDataForCa
                                  (const u8 *)&pSapEvent->sapevt.sapStationAssocReassocCompleteEvent.staMac.bytes[0],
                                  staInfo, GFP_KERNEL);
                     vos_mem_free(staInfo);
-                }
-                else
-                {
-                    hddLog(LOGE, FL(" Assoc Ie length is too long"));
-                }
              }
 #endif
             hdd_manage_delack_timer(pHddCtx);
@@ -1856,7 +1854,7 @@ int hdd_softap_unpackIE(
                 tHalHandle halHandle,
                 eCsrEncryptionType *pEncryptType,
                 eCsrEncryptionType *mcEncryptType,
-                eCsrAuthType *pAuthType,
+                tCsrAuthList *akm_list,
                 v_BOOL_t *pMFPCapable,
                 v_BOOL_t *pMFPRequired,
                 u_int16_t gen_ie_len,
@@ -1866,7 +1864,7 @@ int hdd_softap_unpackIE(
     tDot11fIEWPA dot11WPAIE; 
  
     tANI_U8 *pRsnIe; 
-    tANI_U16 RSNIeLen;
+    tANI_U16 RSNIeLen, i;
     tANI_U32 status;
     
     if (NULL == halHandle)
@@ -1911,11 +1909,12 @@ int hdd_softap_unpackIE(
                 __func__, dot11RSNIE.pwise_cipher_suite_count );
         hddLog(LOG1, FL("%s: authentication suite count: %d"),
                 __func__, dot11RSNIE.akm_suite_cnt);
-        /*Here we have followed the apple base code, 
-          but probably I suspect we can do something different*/
-        //dot11RSNIE.akm_suite_cnt
-        // Just translate the FIRST one 
-        *pAuthType =  hdd_TranslateRSNToCsrAuthType(dot11RSNIE.akm_suite[0]);
+
+        //Translate akms in akm suite
+        for (i = 0; i < dot11RSNIE.akm_suite_cnt; i++)
+            akm_list->authType[i] =
+                hdd_TranslateRSNToCsrAuthType(dot11RSNIE.akm_suite[i]);
+        akm_list->numEntries = dot11RSNIE.akm_suite_cnt;
         //dot11RSNIE.pwise_cipher_suite_count 
         *pEncryptType = hdd_TranslateRSNToCsrEncryptionType(dot11RSNIE.pwise_cipher_suites[0]);                     
         //dot11RSNIE.gp_cipher_suite_count 
@@ -1957,8 +1956,11 @@ int hdd_softap_unpackIE(
         hddLog(LOG1, FL("%s: WPA authentication suite count: %d"),
                 __func__, dot11WPAIE.auth_suite_count);
         //dot11WPAIE.auth_suite_count
-        // Just translate the FIRST one 
-        *pAuthType =  hdd_TranslateWPAToCsrAuthType(dot11WPAIE.auth_suites[0]); 
+        //Translate akms in akm suite
+        for (i = 0; i < dot11WPAIE.auth_suite_count; i++)
+            akm_list->authType[i] =
+                hdd_TranslateWPAToCsrAuthType(dot11WPAIE.auth_suites[i]);
+        akm_list->numEntries = dot11WPAIE.auth_suite_count;
         //dot11WPAIE.unicast_cipher_count 
         *pEncryptType = hdd_TranslateWPAToCsrEncryptionType(dot11WPAIE.unicast_ciphers[0]);                       
         //dot11WPAIE.unicast_cipher_count 
@@ -2172,8 +2174,8 @@ void hdd_check_for_unsafe_ch(hdd_adapter_t *phostapd_adapter,
 
     for (channelLoop = 0; channelLoop < unsafeChannelCount; channelLoop++)
     {
-        if (unsafeChannelList[channelLoop] ==
-             phostapd_adapter->sessionCtx.ap.operatingChannel) {
+        if ((unsafeChannelList[channelLoop] ==
+             phostapd_adapter->sessionCtx.ap.operatingChannel)) {
             if ((AUTO_CHANNEL_SELECT ==
                 phostapd_adapter->sessionCtx.ap.sapConfig.channel)
                 && (WLAN_HDD_SOFTAP == phostapd_adapter->device_mode)) {
@@ -2425,7 +2427,7 @@ void hdd_hostapd_ch_avoid_cb
 
            for (i = 0; i < unsafeChannelCount; i++)
            {
-               if (pSapCtx->sap_sec_chan == unsafeChannelList[i])
+               if ((pSapCtx->sap_sec_chan == unsafeChannelList[i]))
                {
                    /* Current SAP Secondary channel is un-safe channel */
                    VOS_TRACE( VOS_MODULE_ID_SAP, VOS_TRACE_LEVEL_ERROR,
@@ -2514,35 +2516,15 @@ static __iw_softap_setparam(struct net_device *dev,
     hdd_adapter_t *pHostapdAdapter = (netdev_priv(dev));
     tHalHandle hHal;
     hdd_context_t *pHddCtx = NULL;
-    //BEGIN MOT IKSWO-9634, gambugge, Use copy_from_user to get user space data
-    uint8_t *mot_value;
-    int sub_cmd;
-    int set_value;
-    //END IKSWO-9634
+    int *value = (int *)extra;
+    int sub_cmd = value[0];
+    int set_value = value[1];
     eHalStatus status;
     int ret = 0; /* success */
     int enable_pattrn_byte_match, enable_magic_pkt;
     v_CONTEXT_t pVosContext;
 
     ENTER();
-
-    //BEGIN MOT IKSWO-9634, gambugge, Use copy_from_user to get user space data
-    mot_value = (uint8_t*)kmalloc(wrqu->data.length+1, GFP_KERNEL);
-
-    if (NULL == mot_value)
-        return -ENOMEM;
-
-    if(copy_from_user((uint8_t *)mot_value, (uint8_t *)(wrqu->data.pointer), wrqu->data.length)) {
-        VOS_TRACE(VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_ERROR,
-                    "%s -- copy from user -- data pointer failed! bailing", __func__);
-        kfree(mot_value);
-        return -EFAULT;
-    }
-
-    sub_cmd = (int )(*(mot_value + 0));
-    set_value = (int)(*(mot_value + 1));
-    kfree(mot_value);
-    //END IKSWO-9634
 
     if (NULL == pHostapdAdapter)
     {
@@ -4005,7 +3987,6 @@ int __iw_softap_get_channel_list(struct net_device *dev,
     tpChannelListInfo channel_list = (tpChannelListInfo) extra;
     eCsrBand curBand = eCSR_BAND_ALL;
     hdd_context_t *pHddCtx;
-    tpAniSirGlobal pMac; //IKSWO-79967
     int ret = 0;
 
     ENTER();
@@ -4035,7 +4016,6 @@ int __iw_softap_get_channel_list(struct net_device *dev,
         hddLog(LOGE,FL("not able get the current frequency band"));
         return -EIO;
     }
-    pMac = PMAC_STRUCT( hHal ); //IKSWO-79967
     wrqu->data.length = sizeof(tChannelListInfo);
     ENTER();
 
@@ -4072,10 +4052,8 @@ int __iw_softap_get_channel_list(struct net_device *dev,
         hddLog(LOGE,FL("Failed to get Domain ID, %d"),domainIdCurrentSoftap);
         return -EIO;
     }
-    //BEGIN IKSWO-79967, check if current country need disable MHS 5G Band1
-    if( (VOS_TRUE == vos_IsDisableMhsBand1CountryCode(pMac->scan.countryCodeCurrent) ||
-             REGDOMAIN_FCC == domainIdCurrentSoftap) &&
-    //END IKSWO-79967
+
+    if(REGDOMAIN_FCC == domainIdCurrentSoftap &&
              pHddCtx->cfg_ini->gEnableStrictRegulatoryForFCC )
     {
         for(i = 0; i < temp_num_channels; i++)
@@ -5710,6 +5688,10 @@ VOS_STATUS hdd_init_ap_mode( hdd_adapter_t *pAdapter, bool re_init)
                                 ini_cfg->apEndChannelNum,
                                 ini_cfg->apOperatingBand);
     }
+   /* Action frame registered in one adapter which will
+    * applicable to all interfaces
+    */
+    wlan_hdd_cfg80211_register_frames(pAdapter);
 
     return status;
 
@@ -5758,8 +5740,7 @@ hdd_adapter_t* hdd_wlan_create_ap_dev( hdd_context_t *pHddCtx, tSirMacAddr macAd
     
         vos_mem_copy(pWlanHostapdDev->dev_addr, (void *)macAddr,sizeof(tSirMacAddr));
         vos_mem_copy(pHostapdAdapter->macAddressCurrent.bytes, (void *)macAddr, sizeof(tSirMacAddr));
-
-        pWlanHostapdDev->destructor = free_netdev;
+        hdd_dev_setup_destructor(pWlanHostapdDev);
         pWlanHostapdDev->ieee80211_ptr = &pHostapdAdapter->wdev ;
         pHostapdAdapter->wdev.wiphy = pHddCtx->wiphy;  
         pHostapdAdapter->wdev.netdev =  pWlanHostapdDev;
