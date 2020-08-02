@@ -94,7 +94,11 @@ static int32_t aprv2_core_fn_q(struct apr_client_data *data, void *priv)
 
 		if (data->payload_size < 2 * sizeof(uint32_t)) {
 			pr_err("%s: payload has invalid size %d\n",
+<<<<<<< HEAD
 				__func__, data->payload_size);
+=======
+					__func__, data->payload_size);
+>>>>>>> 554d4ca861a4c1aeea3d816f0aa9b8b25255647d
 			return -EINVAL;
 		}
 
