@@ -97,7 +97,7 @@
 };
 
 &sdhc_2 {
-	cd-gpios = <&tlmm 133 0x0>;
+	cd-gpios = <&tlmm 133 0x1>;
 };
 
 &soc {
