@@ -15,7 +15,7 @@ git clone --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86
 
 # Build Kernel
 cd StockPlus
-export PATH="$HOME/Pulpit/gcc-4.9/bin:$PATH"
+export PATH="~/Kramel/gcc-4.9/bin:$PATH"
 make deen_defconfig ARCH=arm64 O=out
 make -j$(nproc --all) O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-android-
 
