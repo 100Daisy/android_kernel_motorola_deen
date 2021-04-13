@@ -13,6 +13,8 @@ git clone https://github.com/100Daisy/AnyKernel3
 git clone https://github.com/100Daisy/android_kernel_motorola_deen -b 11 StockPlus
 git clone --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 gcc-4.9
 
+ls -l
+echo $PWD
 # Build Kernel
 cd StockPlus
 export PATH="~/Kramel/gcc-4.9/bin:$PATH"
