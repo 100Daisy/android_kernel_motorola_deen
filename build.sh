@@ -10,7 +10,7 @@ git config --global color.ui false
 
 # Clone device tree and common tree
 git clone https://github.com/100Daisy/AnyKernel3
-git clone https://github.com/100Daisy/android_kernel_motorola_deen -b 11 StockPlus
+git clone https://github.com/100Daisy/android_kernel_motorola_deen -b caf-rebase StockPlus
 git clone --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 gcc
 
 ls -l
