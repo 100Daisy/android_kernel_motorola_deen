@@ -31,14 +31,6 @@
 			compatible = "android,firmware";
 			fstab {
 				compatible = "android,fstab";
-				vendor {
-					compatible = "android,vendor";
-					dev = "/dev/block/platform/soc/7824900.sdhci/by-name/vendor";
-					type = "ext4";
-					mnt_flags = "ro,barrier=1,discard";
-					fsmgr_flags = "wait,verify";
-					status = "ok";
-				};
 			};
 		};
 	};
@@ -541,7 +533,7 @@
 
 		qcom,vdd-gfx-rstr {
 			qcom,vdd-rstr-reg = "vdd-gfx";
-			qcom,levels = <5 7 7>; /* Nominal, Turbo, Turbo */
+			qcom,levels = <5 7 8>; /* Nominal, Turbo+, Turbo+ */
 			qcom,min-level = <1>; /* No Request */
 		};
 
@@ -894,13 +886,14 @@
 		vdd_gfx-supply = <&gfx_vreg_corner>;
 		qcom,gfxfreq-corner =
 			<         0   0 >,
-			< 133330000   1 >,  /* Min SVS   */
-			< 216000000   2 >,  /* Low SVS   */
-			< 320000000   3 >,  /* SVS       */
-			< 400000000   4 >,  /* SVS Plus  */
-			< 510000000   5 >,  /* NOM       */
-			< 560000000   6 >,  /* Nom Plus  */
-			< 650000000   7 >;  /* Turbo     */
+			< 133330000   1 >,  /* Min SVS    */
+			< 216000000   2 >,  /* Low SVS    */
+			< 320000000   3 >,  /* SVS        */
+			< 400000000   4 >,  /* SVS Plus   */
+			< 510000000   5 >,  /* NOM        */
+			< 560000000   6 >,  /* Nom Plus   */
+			< 650000000   7 >,  /* Turbo      */
+			< 700000000   8 >;  /* Turbo Plus */
 		#clock-cells = <1>;
 	};
 
@@ -1012,7 +1005,7 @@
 			 <&clock_cpu clk_a53_pwr_clk>;
 
 		qcom,cpufreq-table =
-			 <  652800 >,
+			 <  307200 >,
 			 < 1036800 >,
 			 < 1401600 >,
 			 < 1689600 >,
@@ -1074,7 +1067,7 @@
 		cpubw-cpufreq {
 		target-dev = <&cpubw>;
 		cpu-to-dev-map =
-			 <  652800  1611>,
+			 <  307200  1611>,
 			 < 1036800  3221>,
 			 < 1401600  5859>,
 			 < 1689600  6445>,
@@ -1086,7 +1079,7 @@
 		mincpubw-cpufreq {
 			target-dev = <&mincpubw>;
 			cpu-to-dev-map =
-				<  652800 1611 >,
+				<  307200 1611 >,
 				< 1401600 3221 >,
 				< 2208000 5859 >;
 		};
@@ -1675,6 +1668,7 @@
 		qcom,msm-bus,num-cases = <4>;
 		qcom,msm-bus,num-paths = <1>;
 		qcom,support-bus-scaling;
+		qcom,appsbl-qseecom-support;
 		qcom,msm-bus,vectors-KBps =
 			<55 512 0 0>,
 			<55 512 0 0>,
