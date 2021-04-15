@@ -117,9 +117,9 @@ int msm_ipc_config_sec_rules(void *arg)
 	if (ret)
 		return -EFAULT;
 
-	/* Default rule change from config util not allowed */
-	if (sec_rules_arg.service_id == ALL_SERVICE)
-		return -EINVAL;
+    /* Default rule change from config util not allowed */
+    if (sec_rules_arg.service_id == ALL_SERVICE)
+            return -EINVAL;
 
 	if (sec_rules_arg.num_group_info <= 0)
 		return -EINVAL;
