@@ -1,0 +1,12 @@
+ 
+kind: pipeline
+name: Stock+ For Deen
+
+clone:
+  depth: 1
+
+steps:
+- name: building
+  image: fr3akyphantom/droid-builder:latest
+  commands:
+  - bash build.sh
