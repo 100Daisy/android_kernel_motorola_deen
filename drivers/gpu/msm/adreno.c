@@ -807,17 +807,27 @@ static int adreno_of_get_pwrlevels(struct adreno_device *adreno_dev,
 {
 	struct device_node *node, *child;
 	unsigned int bin = 0;
+	unsigned int speed_bin;
+	int gpu_speed_bin_override = CONFIG_GPU_SPEED_BIN_OVERRIDE;
 
 	node = of_find_node_by_name(parent, "qcom,gpu-pwrlevel-bins");
 	if (node == NULL)
 		return adreno_of_get_legacy_pwrlevels(adreno_dev, parent);
+
+	if (gpu_speed_bin_override) {
+		speed_bin = gpu_speed_bin_override;
+		pr_info("%s: 8996-lite GPU speed bin %d. Override to %d\n",
+			__func__, adreno_dev->speed_bin,
+			gpu_speed_bin_override);
+	} else
+		speed_bin = adreno_dev->speed_bin;
 
 	for_each_child_of_node(node, child) {
 
 		if (of_property_read_u32(child, "qcom,speed-bin", &bin))
 			continue;
 
-		if (bin == adreno_dev->speed_bin) {
+		if (bin == speed_bin) {
 			int ret;
 
 			ret = adreno_of_parse_pwrlevels(adreno_dev, child);
@@ -883,17 +893,17 @@ static int adreno_of_get_power(struct adreno_device *adreno_dev,
 	/* get pm-qos-active-latency, set it to default if not found */
 	if (of_property_read_u32(node, "qcom,pm-qos-active-latency",
 		&device->pwrctrl.pm_qos_active_latency))
-		device->pwrctrl.pm_qos_active_latency = 501;
+		device->pwrctrl.pm_qos_active_latency = 1000;
 
 	/* get pm-qos-cpu-mask-latency, set it to default if not found */
 	if (of_property_read_u32(node, "qcom,l2pc-cpu-mask-latency",
 		&device->pwrctrl.pm_qos_cpu_mask_latency))
-		device->pwrctrl.pm_qos_cpu_mask_latency = 501;
+		device->pwrctrl.pm_qos_cpu_mask_latency = 1000;
 
 	/* get pm-qos-wakeup-latency, set it to default if not found */
 	if (of_property_read_u32(node, "qcom,pm-qos-wakeup-latency",
 		&device->pwrctrl.pm_qos_wakeup_latency))
-		device->pwrctrl.pm_qos_wakeup_latency = 101;
+		device->pwrctrl.pm_qos_wakeup_latency = 100;
 
 	if (of_property_read_u32(node, "qcom,idle-timeout", &timeout))
 		timeout = 80;
