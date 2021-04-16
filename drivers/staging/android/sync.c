@@ -637,8 +637,6 @@ EXPORT_SYMBOL(sync_fence_wait);
 
 static void sync_fence_free(struct kref *kref)
 {
-	struct sync_fence *fence = container_of(kref, struct sync_fence, kref);
-
 	sync_fence_free_pts(fence);
 
 	kfree(fence);
