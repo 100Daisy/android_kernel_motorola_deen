@@ -1833,7 +1833,7 @@ static int xpad_probe(struct usb_interface *intf, const struct usb_device_id *id
 		 */
 		error = xpad360w_start_input(xpad);
 		if (error)
-			goto err_deinit_input;
+			goto err_deinit_output;
 
 		/*
 		 * Send presence packet.
@@ -1844,7 +1844,7 @@ static int xpad_probe(struct usb_interface *intf, const struct usb_device_id *id
 		 */
 		error = xpad_inquiry_pad_presence(xpad);
 		if (error)
-			goto err_kill_in_urb;
+			goto err_deinit_output;
 	}
 	return 0;
 
